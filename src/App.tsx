@@ -660,7 +660,7 @@ function App() {
     if (!audio) return;
     audio.muted = true;
     audio.loop = true;
-    audio.volume = 0.6;
+    audio.volume = 0.3;
   }, []);
 
   useEffect(() => {
