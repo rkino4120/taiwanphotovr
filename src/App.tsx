@@ -36,7 +36,8 @@ const FLOOR_Y = 0;
 
 function FloatingParticles() {
   const pointsRef = useRef<THREE.Points>(null);
-  const count = 150;
+  const session = useXR((state) => state.session);
+  const count = session ? 75 : 150;
 
   // テクスチャ生成
   const texture = useMemo(() => {
@@ -134,7 +135,7 @@ function Ground() {
   }, [colorMap, roughnessMap]);
 
   return (
-    <mesh position={[0, FLOOR_Y, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+    <mesh position={[0, FLOOR_Y, 0]} rotation={[-Math.PI / 2, 0, 0]}>
       <planeGeometry args={[12, 12]} />
       <meshStandardMaterial 
         map={colorMap}
@@ -216,13 +217,13 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
         </mesh>
 
         {/* 正面 */}
-        <mesh position={[0, 0, 0.011]} rotation={[0, 0, 0]} castShadow receiveShadow>
+        <mesh position={[0, 0, 0.011]} rotation={[0, 0, 0]}>
           <planeGeometry args={[WIDTH, HEIGHT]} />
           <meshBasicMaterial map={frontTex} side={THREE.FrontSide} />
         </mesh>
 
         {/* 裏面 */}
-        <mesh position={[0, 0, -0.011]} rotation={[0, Math.PI, 0]} castShadow receiveShadow>
+        <mesh position={[0, 0, -0.011]} rotation={[0, Math.PI, 0]}>
           <planeGeometry args={[WIDTH, HEIGHT]} />
           <meshBasicMaterial map={backTex} side={THREE.FrontSide} />
         </mesh>
@@ -235,7 +236,6 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
         </mesh>
         <mesh
           rotation={[Math.PI / 2, 0, Math.PI / 2]}
-          castShadow
         >
           <coneGeometry args={[0.04, 0.18, 32]} />
           <meshStandardMaterial color="#dddddd" emissive="#dddddd" emissiveIntensity={0.2} />
@@ -249,6 +249,8 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
           font={fontUrl}
           outlineWidth={0.005}
           outlineColor="#000000"
+          maxWidth={1}
+          renderOrder={1}
         >
           前へ
         </Text>
@@ -261,7 +263,6 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
         </mesh>
         <mesh
           rotation={[Math.PI / 2, 0, -Math.PI / 2]}
-          castShadow
         >
           <coneGeometry args={[0.04, 0.18, 32]} />
           <meshStandardMaterial color="#dddddd" emissive="#dddddd" emissiveIntensity={0.2} />
@@ -275,6 +276,8 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
           font={fontUrl}
           outlineWidth={0.005}
           outlineColor="#000000"
+          maxWidth={1}
+          renderOrder={1}
         >
           次へ
         </Text>
@@ -334,7 +337,7 @@ function PhotoFrame({ url, position = [-0.89, FLOOR_Y + 1.5, 0], rotation = [0, 
   return (
     <group position={localPos} rotation={rotation}>
       
-      <mesh position={[0, 0, -0.015]} castShadow receiveShadow>
+      <mesh position={[0, 0, -0.015]}>
         <boxGeometry args={[width + 0.06, height + 0.06, 0.03]} />
         <meshStandardMaterial color="#1a1a1a" roughness={0.2} />
       </mesh>
@@ -592,36 +595,36 @@ function Walls() {
   return (
     <group>
        {/* 左 */}
-       <mesh position={[-1, FLOOR_Y + 2, 0]} receiveShadow castShadow>
+       <mesh position={[-1, FLOOR_Y + 2, 0]}>
          <boxGeometry args={[0.2, 4, 10]} />
          <meshStandardMaterial {...wallMaterialProps} />
        </mesh>
        {/* 右 */}
-       <mesh position={[1, FLOOR_Y + 2, 0]} receiveShadow castShadow>
+       <mesh position={[1, FLOOR_Y + 2, 0]}>
          <boxGeometry args={[0.2, 4, 10]} />
          <meshStandardMaterial {...wallMaterialProps} />
        </mesh>
        {/* 前後壁（黒） */}
-       <mesh position={[0, FLOOR_Y + 2, -5]} receiveShadow>
+       <mesh position={[0, FLOOR_Y + 2, -5]}>
          <boxGeometry args={[10, 4, 0.2]} />
          <meshStandardMaterial color="#000000" />
        </mesh>
-       <mesh position={[0, FLOOR_Y + 2, 5]} receiveShadow>
+       <mesh position={[0, FLOOR_Y + 2, 5]}>
          <boxGeometry args={[10, 4, 0.2]} />
          <meshStandardMaterial color="#000000" />
        </mesh>
        {/* 左端黒 */}
-       <mesh position={[-5, FLOOR_Y + 2, 0]} receiveShadow castShadow>
+       <mesh position={[-5, FLOOR_Y + 2, 0]}>
          <boxGeometry args={[0.2, 4, 10]} />
          <meshStandardMaterial color="#000000" />
        </mesh>
        {/* 右端黒 */}
-       <mesh position={[5, FLOOR_Y + 2, 0]} receiveShadow castShadow>
+       <mesh position={[5, FLOOR_Y + 2, 0]}>
          <boxGeometry args={[0.2, 4, 10]} />
          <meshStandardMaterial color="#000000" />
        </mesh>
        {/* 天井 */}
-       <mesh position={[0, FLOOR_Y + 4, 0]} rotation={[Math.PI / 2, 0, 0]} receiveShadow>
+       <mesh position={[0, FLOOR_Y + 4, 0]} rotation={[Math.PI / 2, 0, 0]}>
          <planeGeometry args={[10, 10]} />
          <meshStandardMaterial color="#000000" />
        </mesh>
@@ -648,8 +651,7 @@ function SingleSpot({ position }: { position: [number, number, number] }) {
         angle={Math.PI / 5} 
         distance={6}
         intensity={3.0} 
-        penumbra={0.4} 
-        castShadow
+        penumbra={0.4}
       />
       <mesh ref={targetRef} position={[position[0], FLOOR_Y, position[2]]} visible={false} />
     </>
@@ -843,15 +845,19 @@ function App() {
       <audio ref={audioRef} src="./sound/bgm.mp3" preload="auto" />
 
       <Canvas
-        shadows
         camera={{ position: [0, 1.6, 3], fov: 75 }}
         style={{ width: '100vw', height: '100vh' }}
+        gl={{ 
+          antialias: false,
+          powerPreference: 'high-performance'
+        }}
+        dpr={[1, 2]}
       >
         <XR store={store}>
           <Controls />
           
           <ambientLight intensity={0.08} />
-          <directionalLight position={[5, 10, 7.5]} intensity={0.25} castShadow />
+          <directionalLight position={[5, 10, 7.5]} intensity={0.25} />
           
           <SpotLightsRow />
           <FloatingParticles />
