@@ -9,13 +9,6 @@ import * as THREE from 'three';
 // 修正: .js拡張子を追加してパス解決エラーを解消
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 
-// 環境変数デバッグ（最初に実行される）
-console.log('=== App.tsx Environment Check ===');
-console.log('VITE_MICROCMS_API_KEY:', import.meta.env.VITE_MICROCMS_API_KEY ? `EXISTS (${import.meta.env.VITE_MICROCMS_API_KEY.length} chars)` : 'UNDEFINED');
-console.log('MICROCMS_API_KEY:', import.meta.env.MICROCMS_API_KEY ? `EXISTS (${import.meta.env.MICROCMS_API_KEY.length} chars)` : 'UNDEFINED');
-console.log('All env keys:', Object.keys(import.meta.env));
-console.log('================================');
-
 // --- ユーティリティ関数 ---
 
 function htmlToText(html: string): string {
