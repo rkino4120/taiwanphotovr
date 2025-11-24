@@ -45,6 +45,15 @@ function Ground() {
         tex.needsUpdate = true;
       }
     });
+    // 色用テクスチャは sRGB にする（roughness 等は線形で扱う）
+    try {
+      if (colorMap) (colorMap as any).colorSpace = THREE.SRGBColorSpace;
+    } catch (e) {
+      try { if (colorMap) (colorMap as any).encoding = (THREE as any).sRGBEncoding; } catch (e2) { }
+    }
+    try {
+      if (roughnessMap) (roughnessMap as any).encoding = (THREE as any).LinearEncoding;
+    } catch (e) { }
   }, [colorMap, roughnessMap]);
 
   return (
@@ -69,7 +78,11 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
     [frontTex, backTex].forEach((t) => {
       if (!t) return;
       t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
-      try { (t as any).colorSpace = THREE.SRGBColorSpace; } catch (e) { /* ignore old three versions */ }
+      try {
+        (t as any).colorSpace = THREE.SRGBColorSpace;
+      } catch (e) {
+        try { (t as any).encoding = (THREE as any).sRGBEncoding; } catch (e2) { /* ignore if neither exists */ }
+      }
       t.needsUpdate = true;
     });
   }, [frontTex, backTex]);
@@ -124,21 +137,21 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
            <meshStandardMaterial color="#222" />
         </mesh>
 
-        <mesh position={[0, 0, EPS + 0.015]} onPointerDown={toggleFlip}>
+        <mesh position={[0, 0, EPS + 0.015]} onPointerDown={toggleFlip} receiveShadow={false} castShadow={false}>
           <planeGeometry args={[WIDTH, HEIGHT]} />
-          <meshBasicMaterial transparent opacity={0} side={THREE.DoubleSide} />
+          <meshBasicMaterial transparent opacity={0} side={THREE.DoubleSide} depthWrite={false} />
         </mesh>
 
         {/* 正面 */}
-        <mesh position={[0, 0, 0.011]} rotation={[0, 0, 0]}>
+        <mesh position={[0, 0, 0.011]} rotation={[0, 0, 0]} receiveShadow={false} castShadow={false}>
           <planeGeometry args={[WIDTH, HEIGHT]} />
-          <meshBasicMaterial map={frontTex} side={THREE.FrontSide} />
+          <meshBasicMaterial map={frontTex} side={THREE.FrontSide} toneMapped={false} />
         </mesh>
 
         {/* 裏面 */}
-        <mesh position={[0, 0, -0.011]} rotation={[0, Math.PI, 0]}>
+        <mesh position={[0, 0, -0.011]} rotation={[0, Math.PI, 0]} receiveShadow={false} castShadow={false}>
           <planeGeometry args={[WIDTH, HEIGHT]} />
-          <meshBasicMaterial map={backTex} side={THREE.FrontSide} />
+          <meshBasicMaterial map={backTex} side={THREE.FrontSide} toneMapped={false} />
         </mesh>
       </group>
 
@@ -238,6 +251,12 @@ function PhotoFrame({ url, position = [-0.89, FLOOR_Y + 1.5, 0], rotation = [0, 
       texture.minFilter = THREE.LinearMipmapLinearFilter;
       texture.magFilter = THREE.LinearFilter;
       texture.anisotropy = 1; // 異方性フィルタリングを最小に
+      // 写真テクスチャは sRGB カラーとして扱う
+      try {
+        (texture as any).colorSpace = THREE.SRGBColorSpace;
+      } catch (e) {
+        try { (texture as any).encoding = (THREE as any).sRGBEncoding; } catch (e2) { }
+      }
     }
   }, [texture]);
   
@@ -468,6 +487,12 @@ function Walls() {
       colorMap.wrapS = colorMap.wrapT = THREE.RepeatWrapping;
       colorMap.repeat.set(5, 2);
       colorMap.needsUpdate = true;
+      // 壁のカラーは sRGB にする
+      try {
+        (colorMap as any).colorSpace = THREE.SRGBColorSpace;
+      } catch (e) {
+        try { (colorMap as any).encoding = (THREE as any).sRGBEncoding; } catch (e2) { }
+      }
     }
   }, [colorMap]);
 
