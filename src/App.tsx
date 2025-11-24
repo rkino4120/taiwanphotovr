@@ -34,88 +34,6 @@ const FLOOR_Y = 0;
 
 // --- コンポーネント群 ---
 
-function FloatingParticles() {
-  const pointsRef = useRef<THREE.Points>(null);
-  const session = useXR((state) => state.session);
-  const count = session ? 75 : 150;
-
-  // テクスチャ生成
-  const texture = useMemo(() => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 32;
-    canvas.height = 32;
-    const ctx = canvas.getContext('2d')!;
-    const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
-    gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
-    gradient.addColorStop(0.4, 'rgba(200, 200, 255, 0.5)');
-    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 32, 32);
-    return new THREE.CanvasTexture(canvas);
-  }, []);
-
-  const { positions, velocities } = useMemo(() => {
-    const pos = new Float32Array(count * 3);
-    const vel = new Float32Array(count * 3);
-    
-    for (let i = 0; i < count; i++) {
-      pos[i * 3] = (Math.random() - 0.5) * 8;
-      pos[i * 3 + 1] = Math.random() * 4;
-      pos[i * 3 + 2] = (Math.random() - 0.5) * 8;
-
-      vel[i * 3] = (Math.random() - 0.5) * 0.001;
-      vel[i * 3 + 1] = -0.0005 - Math.random() * 0.0005;
-      vel[i * 3 + 2] = (Math.random() - 0.5) * 0.001;
-    }
-    return { positions: pos, velocities: vel };
-  }, []);
-
-  useFrame((state) => {
-    if (pointsRef.current) {
-      const posAttr = pointsRef.current.geometry.attributes.position;
-      const positions = posAttr.array as Float32Array;
-      const time = state.clock.elapsedTime;
-      
-      for (let i = 0; i < count; i++) {
-        positions[i * 3] += velocities[i * 3] + Math.sin(time * 0.5 + i) * 0.0002;
-        positions[i * 3 + 1] += velocities[i * 3 + 1];
-        positions[i * 3 + 2] += velocities[i * 3 + 2] + Math.cos(time * 0.3 + i * 0.5) * 0.0002;
-        
-        // リスポーン処理
-        if (positions[i * 3 + 1] < 0) {
-          positions[i * 3] = (Math.random() - 0.5) * 8;
-          positions[i * 3 + 1] = 4;
-          positions[i * 3 + 2] = (Math.random() - 0.5) * 8;
-        }
-      }
-      posAttr.needsUpdate = true;
-    }
-  });
-
-  return (
-    <points ref={pointsRef}>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          count={count}
-          array={positions}
-          itemSize={3}
-          args={[positions, 3]}
-        />
-      </bufferGeometry>
-      <pointsMaterial
-        size={0.015}
-        color="#aaccff"
-        map={texture}
-        transparent
-        opacity={0.6}
-        sizeAttenuation
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-      />
-    </points>
-  );
-}
 
 function Ground() {
   // ファイルパスを元に戻す
@@ -860,7 +778,6 @@ function App() {
           <directionalLight position={[5, 10, 7.5]} intensity={0.25} />
           
           <SpotLightsRow />
-          <FloatingParticles />
           <Ground />
           <Walls />
           <FloatingBoard onPrev={() => startCarouselRef.current('prev')} onNext={() => startCarouselRef.current('next')} />
