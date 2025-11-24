@@ -604,13 +604,15 @@ function Controls() {
 // メイン App
 function App() {
   const [vrStarted, setVrStarted] = useState(false);
-  const [vrError, setVrError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [works, setWorks] = useState<any[]>([]);
+  const [vrSupported, setVrSupported] = useState<boolean | null>(null);
   const startCarouselRef = useRef<(dir: 'next' | 'prev') => void>(() => {});
   const audioRef = useRef<HTMLAudioElement | null>(null);
   // 初期は再生していない（ページ表示時はミュートにするため）
   const [bgmEnabled, setBgmEnabled] = useState(false);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const scrollIntervalRef = useRef<number | null>(null);
 
   const preloadImages = async (urls: string[]): Promise<void> => {
     await Promise.all(urls.map(url => {
@@ -622,6 +624,19 @@ function App() {
       });
     }));
   };
+
+  useEffect(() => {
+    // VR対応チェック
+    if ('xr' in navigator) {
+      (navigator as any).xr?.isSessionSupported('immersive-vr').then((supported: boolean) => {
+        setVrSupported(supported);
+      }).catch(() => {
+        setVrSupported(false);
+      });
+    } else {
+      setVrSupported(false);
+    }
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -660,12 +675,35 @@ function App() {
     })();
   }, []);
 
+
+
+  // 自動横スクロール（VR 起動時は停止）
+  useEffect(() => {
+    if (vrStarted) return;
+    if (!works || works.length === 0) return;
+
+    if (scrollIntervalRef.current) {
+      clearInterval(scrollIntervalRef.current);
+      scrollIntervalRef.current = null;
+    }
+
+    scrollIntervalRef.current = window.setInterval(() => {
+      setScrollOffset(prev => prev + 0.5); // ゆっくり横にスクロール
+    }, 30);
+
+    return () => {
+      if (scrollIntervalRef.current) {
+        clearInterval(scrollIntervalRef.current);
+        scrollIntervalRef.current = null;
+      }
+    };
+  }, [works, vrStarted]);
+
   const handleVRClick = async () => {
     if (!vrStarted) {
       try {
         await store.enterVR();
         setVrStarted(true);
-        setVrError(null);
         // VR への入室はユーザー操作とみなされるため、ミュートを解除してから bgmEnabled を true にする
         if (audioRef.current) {
           audioRef.current.muted = false;
@@ -673,7 +711,6 @@ function App() {
         }
       } catch (error) {
         console.error('VR Error:', error);
-        setVrError('VR not supported or blocked');
         setVrStarted(false);
       }
     }
@@ -726,33 +763,60 @@ function App() {
 
   return (
     <>
-      <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 1000, display: 'flex', gap: '10px' }}>
-        <button 
-          onClick={handleVRClick}
-          disabled={vrStarted}
-          style={{ 
-            opacity: vrStarted ? 0.5 : 1, cursor: vrStarted ? 'not-allowed' : 'pointer'
-          }}
-        >
-          {vrStarted ? 'VR Active' : 'Enter VR'}
-        </button>
-
-        <button
-          onClick={toggleBgm}
-          style={{ cursor: 'pointer' }}
-        >
-          {bgmEnabled ? 'BGM: ON' : 'BGM: OFF'}
-        </button>
-      </div>
-      
-      {vrError && (
-        <div style={{ position: 'absolute', top: '50px', left: '10px', zIndex: 1000, color: 'red', backgroundColor: 'rgba(0,0,0,0.7)', padding: '10px', borderRadius: '5px' }}>
-          {vrError}
-        </div>
-      )}
-
       {/* BGM audio element */}
       <audio ref={audioRef} src="./sound/bgm.mp3" preload="auto" />
+
+      {/* 非VR時のPC向けプレビューオーバーレイ */}
+      {!vrStarted && (
+        <div className="fixed inset-0 bg-black text-white z-999 overflow-auto p-8">
+          <div className="max-w-4xl mx-auto">
+            <div className="mb-8 flex justify-center">
+              <img src="./images/frontpage.webp" alt="VR台湾写真展「時勢使然」" className="max-w-3xl w-full h-auto" />
+            </div>
+            <div className="flex justify-center mb-20">
+              {vrSupported ? (
+                <button onClick={handleVRClick} className="px-8 py-6 text-2xl font-bold rounded-lg border-none bg-white text-gray-900 hover:text-white hover:bg-gray-900 cursor-pointer font-noto">VRで鑑賞する</button>
+              ) : (
+                <p className="text-xl text-gray-400 font-noto">VRゴーグルをご用意ください。</p>
+              )}
+            </div>
+
+            <p className="mb-4">展示写真</p>
+            {/* 写真スライダー（横スクロールアニメーション） */}
+            <div className="relative w-full h-80 bg-black rounded-lg overflow-hidden">
+              {works && works.length ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: '1rem',
+                    transform: `translateX(-${scrollOffset}px)`,
+                    transition: 'none',
+                  }}
+                >
+                  {/* 画像を2周分表示して無限スクロール効果 */}
+                  {[...works, ...works].map((work, idx) => (
+                    <div
+                      key={`${work.id}-${idx}`}
+                      style={{
+                        minWidth: '280px',
+                        height: '320px',
+                        backgroundImage: `url(${work.photo?.url})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        borderRadius: '8px',
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-gray-400 p-5 text-center">読み込み中、または表示するコンテンツがありません。</div>
+              )}
+            </div>
+
+            {/* VRボタンは上に移動しました */}
+          </div>
+        </div>
+      )}
 
       <Canvas
         camera={{ position: [0, 1.6, 3], fov: 75 }}

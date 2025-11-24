@@ -1,1 +1,28 @@
 @import "tailwindcss";
+
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-weight: 400;
+  src: url('./fonts/NotoSansJP-Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-weight: 500;
+  src: url('./fonts/NotoSansJP-Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-weight: 700;
+  src: url('./fonts/NotoSansJP-Regular.ttf') format('truetype');
+}
+
+@layer utilities {
+  .font-noto {
+    font-family: 'Noto Sans JP', sans-serif;
+  }
+}
