@@ -21,6 +21,9 @@ interface CacheData {
 const MICROCMS_URL = import.meta.env.VITE_MICROCMS_API_URL || 'https://liangworks.microcms.io/api/v1/taiwanphoto';
 const API_KEY = import.meta.env.VITE_MICROCMS_API_KEY || import.meta.env.MICROCMS_API_KEY;
 
+// デバッグ用ログ（本番環境で環境変数が読み込まれているか確認）
+console.log('API Key exists:', !!API_KEY, 'Length:', API_KEY?.length || 0);
+
 export const useWorks = (): UseWorksResult => {
   const [works, setWorks] = useState<Work[]>([]);
   const [loading, setLoading] = useState(true);
