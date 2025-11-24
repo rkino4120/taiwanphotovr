@@ -3,11 +3,6 @@ import { Canvas, useFrame, useLoader } from '@react-three/fiber';
 import { XR, createXRStore, useXR } from '@react-three/xr';
 import { OrbitControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
-// 型定義エラー回避
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-// 修正: .js拡張子を追加してパス解決エラーを解消
-import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 
 // --- ユーティリティ関数 ---
 
@@ -466,7 +461,6 @@ function PhotoWall({ works, startCarouselRef }: { works: any[], startCarouselRef
 }
 
 function Walls() {
-  // 元のファイルパスとEXR読み込みロジックを復活
   const colorMap = useLoader(THREE.TextureLoader, './images/plastered_wall_03_diff_1k.jpg');
 
   useMemo(() => {
@@ -477,47 +471,9 @@ function Walls() {
     }
   }, [colorMap]);
 
-  const [roughMap, setRoughMap] = useState<THREE.Texture | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let loadedTexture: THREE.Texture | null = null;
-    const roughPath = './images/plastered_wall_03_rough_1k.exr';
-
-    const onLoad = (tex: THREE.Texture) => {
-      if (cancelled) return;
-      loadedTexture = tex; 
-      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-      tex.repeat.set(5, 2);
-      if (roughPath.toLowerCase().endsWith('.exr')) {
-        tex.minFilter = THREE.LinearFilter;
-        tex.magFilter = THREE.LinearFilter;
-      }
-      tex.needsUpdate = true;
-      setRoughMap(tex);
-    };
-
-    if (roughPath.toLowerCase().endsWith('.exr')) {
-      const loader = new EXRLoader();
-      loader.load(roughPath, (tex: any) => onLoad(tex as THREE.Texture), undefined, console.error);
-    } else {
-      const loader = new THREE.TextureLoader();
-      loader.setCrossOrigin('anonymous');
-      loader.load(roughPath, onLoad, undefined, console.error);
-    }
-
-    return () => { 
-      cancelled = true; 
-      if (loadedTexture) loadedTexture.dispose();
-    };
-  }, []);
-
   const wallMaterialProps = {
     map: colorMap,
-    roughnessMap: roughMap,
-    roughness: 1,
-    bumpMap: roughMap,
-    bumpScale: 0.1,
+    roughness: 0.8,
   } as any;
 
   return (
