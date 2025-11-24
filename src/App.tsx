@@ -236,6 +236,16 @@ function PhotoFrame({ url, position = [-0.89, FLOOR_Y + 1.5, 0], rotation = [0, 
     loader.crossOrigin = 'anonymous';
   });
   
+  // VRパフォーマンス向上のためテクスチャ設定を最適化
+  useMemo(() => {
+    if (texture) {
+      texture.generateMipmaps = true;
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.anisotropy = 1; // 異方性フィルタリングを最小に
+    }
+  }, [texture]);
+  
   const { width, height } = useMemo(() => {
     if (texture.image?.width && texture.image?.height) {
       const aspect = texture.image.width / texture.image.height;
@@ -566,10 +576,10 @@ function SingleSpot({ position }: { position: [number, number, number] }) {
       <spotLight
         ref={lightRef}
         position={position}
-        angle={Math.PI / 5} 
-        distance={6}
-        intensity={3.0} 
-        penumbra={0.4}
+        angle={Math.PI / 4} 
+        distance={8}
+        intensity={4.5} 
+        penumbra={0.5}
       />
       <mesh ref={targetRef} position={[position[0], FLOOR_Y, position[2]]} visible={false} />
     </>
@@ -579,7 +589,8 @@ function SingleSpot({ position }: { position: [number, number, number] }) {
 function SpotLightsRow() {
   const positions = useMemo(() => {
     const arr: Array<[number, number, number]> = [];
-    for (let z = -4; z <= 4; z += 2) {
+    // VRパフォーマンス向上のためライト数を削減
+    for (let z = -3; z <= 3; z += 3) {
       arr.push([0, 2, z]);
     }
     return arr;
@@ -767,15 +778,18 @@ function App() {
         style={{ width: '100vw', height: '100vh' }}
         gl={{ 
           antialias: false,
-          powerPreference: 'high-performance'
+          powerPreference: 'high-performance',
+          alpha: false,
+          stencil: false,
+          depth: true
         }}
-        dpr={[1, 2]}
+        dpr={[1, 1.5]}
       >
         <XR store={store}>
           <Controls />
           
-          <ambientLight intensity={0.08} />
-          <directionalLight position={[5, 10, 7.5]} intensity={0.25} />
+          <ambientLight intensity={0.3} />
+          <directionalLight position={[5, 10, 7.5]} intensity={0.5} />
           
           <SpotLightsRow />
           <Ground />
