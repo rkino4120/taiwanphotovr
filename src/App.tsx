@@ -144,10 +144,10 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
 
       {/* 左矢印 */}
       <group position={[-WIDTH / 2 - 0.25, 0, 0]}>
-        <mesh visible={false} onClick={(e) => { e.stopPropagation(); onPrev && onPrev(); }}>
-            <boxGeometry args={[0.2, 0.3, 0.2]} />
-        </mesh>
-        <mesh
+        <mesh 
+          onPointerDown={(e) => { e.stopPropagation(); onPrev && onPrev(); }}
+          onPointerEnter={(e) => { (e.object as THREE.Mesh).scale.set(1.2, 1.2, 1.2); }}
+          onPointerLeave={(e) => { (e.object as THREE.Mesh).scale.set(1, 1, 1); }}
           rotation={[Math.PI / 2, 0, Math.PI / 2]}
         >
           <coneGeometry args={[0.04, 0.18, 32]} />
@@ -171,10 +171,10 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
 
       {/* 右矢印 */}
       <group position={[WIDTH / 2 + 0.25, 0, 0]}>
-        <mesh visible={false} onClick={(e) => { e.stopPropagation(); onNext && onNext(); }}>
-            <boxGeometry args={[0.2, 0.3, 0.2]} />
-        </mesh>
-        <mesh
+        <mesh 
+          onPointerDown={(e) => { e.stopPropagation(); onNext && onNext(); }}
+          onPointerEnter={(e) => { (e.object as THREE.Mesh).scale.set(1.2, 1.2, 1.2); }}
+          onPointerLeave={(e) => { (e.object as THREE.Mesh).scale.set(1, 1, 1); }}
           rotation={[Math.PI / 2, 0, -Math.PI / 2]}
         >
           <coneGeometry args={[0.04, 0.18, 32]} />
@@ -201,20 +201,20 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
 }
 
 // BGM を制御する 3D UI（FloatingBoard の下に配置）
-function Bgm3DControls({ position = [0, FLOOR_Y + 0.6, -1.3], bgmEnabled, toggleBgm }: { position?: [number, number, number], bgmEnabled: boolean, toggleBgm: () => void }) {
+function Bgm3DControls({ position = [0, FLOOR_Y + 1.0, -1.3], bgmEnabled, toggleBgm }: { position?: [number, number, number], bgmEnabled: boolean, toggleBgm: () => void }) {
   const [hover, setHover] = useState(false);
-  const sizeX = 0.5;
-  const sizeY = 0.18;
+  const sizeX = 0.2;
+  const sizeY = 0.08;
   return (
     <group position={position}>
-      <mesh position={[0, -0.05, 0]} onPointerDown={(e) => { e.stopPropagation(); toggleBgm(); }} onPointerOver={() => setHover(true)} onPointerOut={() => setHover(false)}>
+      <mesh position={[0, -0.09, 0]} onPointerDown={(e) => { e.stopPropagation(); toggleBgm(); }} onPointerOver={() => setHover(true)} onPointerOut={() => setHover(false)}>
         <boxGeometry args={[sizeX, sizeY, 0.02]} />
         <meshStandardMaterial color={hover ? 0x88ccff : 0x666666} metalness={0.2} roughness={0.4} />
       </mesh>
       <Text
-        position={[0, -0.05, 0.03]}
+        position={[0, -0.08, 0.03]}
         rotation={[0, 0, 0]}
-        fontSize={0.06}
+        fontSize={0.02}
         color="white"
         anchorX="center"
         anchorY="middle"
