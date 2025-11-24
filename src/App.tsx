@@ -443,7 +443,7 @@ function PhotoWall({ works, startCarouselRef }: { works: any[], startCarouselRef
         <PhotoFrame 
           key={`w3-${startIndex}`}
           url={w3.photo.url} 
-          position={[-0.89, FLOOR_Y + 1.5 + verticalOffsetRef.current, 0.7]} 
+          position={[-0.89, FLOOR_Y + 1.3 + verticalOffsetRef.current, 0.7]} 
           rotation={[0, Math.PI / 2, 0]} 
           title={w3.title} 
           body={w3.body} 
@@ -455,7 +455,7 @@ function PhotoWall({ works, startCarouselRef }: { works: any[], startCarouselRef
         <PhotoFrame 
           key={`w1-${startIndex}`}
           url={w1.photo.url} 
-          position={[-0.89, FLOOR_Y + 1.5 + verticalOffsetRef.current, -0.7]} 
+          position={[-0.89, FLOOR_Y + 1.3 + verticalOffsetRef.current, -0.7]} 
           rotation={[0, Math.PI / 2, 0]} 
           title={w1.title} 
           body={w1.body} 
@@ -467,7 +467,7 @@ function PhotoWall({ works, startCarouselRef }: { works: any[], startCarouselRef
         <PhotoFrame 
           key={`w2-${startIndex}`}
           url={w2.photo.url} 
-          position={[0.89, FLOOR_Y + 1.5 + verticalOffsetRef.current, 0]} 
+          position={[0.89, FLOOR_Y + 1.3 + verticalOffsetRef.current, 0]} 
           rotation={[0, -Math.PI / 2, 0]} 
           title={w2.title} 
           body={w2.body} 
