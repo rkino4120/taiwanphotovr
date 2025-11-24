@@ -1,0 +1,6 @@
+[build]
+  command = "VITE_MICROCMS_API_KEY=$MICROCMS_API_KEY npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "18"
