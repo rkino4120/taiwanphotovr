@@ -152,9 +152,12 @@ export const useWorks = (): UseWorksResult => {
   );
 
   useEffect(() => {
-    void fetchWorks();
+    const id = window.setTimeout(() => {
+      void fetchWorks();
+    }, 0);
 
     return () => {
+      window.clearTimeout(id);
       abortControllerRef.current?.abort();
     };
   }, [fetchWorks]);

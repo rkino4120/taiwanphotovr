@@ -58,22 +58,20 @@ const store = createXRStore({
 // --- 3D コンポーネント群 ---
 
 const Ground = memo(function Ground() {
-  const [colorMap, roughnessMap] = useTexture([
-    './images/concrete_diff.jpg',
-    './images/concrete_rough.png',
-  ]);
-
-  useEffect(() => {
-    for (const tex of [colorMap, roughnessMap]) {
-      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-      tex.repeat.set(5, 5);
-    }
-    // 色用テクスチャは sRGB、bump/roughness 用は非カラー（線形）として扱う
-    colorMap.colorSpace = THREE.SRGBColorSpace;
-    roughnessMap.colorSpace = THREE.NoColorSpace;
-    colorMap.needsUpdate = true;
-    roughnessMap.needsUpdate = true;
-  }, [colorMap, roughnessMap]);
+  const [colorMap, roughnessMap] = useTexture(
+    ['./images/concrete_diff.jpg', './images/concrete_rough.png'],
+    ([c, r]) => {
+      for (const tex of [c, r]) {
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(5, 5);
+      }
+      // 色用テクスチャは sRGB、bump/roughness 用は非カラー（線形）として扱う
+      c.colorSpace = THREE.SRGBColorSpace;
+      r.colorSpace = THREE.NoColorSpace;
+      c.needsUpdate = true;
+      r.needsUpdate = true;
+    },
+  );
 
   return (
     <mesh position={[0, FLOOR_Y, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -90,18 +88,16 @@ const FloatingBoard = memo(function FloatingBoard({
   onPrev?: () => void;
   onNext?: () => void;
 }) {
-  const [frontTex, backTex] = useTexture([
-    './images/frontpage.webp',
-    './images/profilepage.webp',
-  ]);
-
-  useEffect(() => {
-    for (const tex of [frontTex, backTex]) {
-      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.needsUpdate = true;
-    }
-  }, [frontTex, backTex]);
+  const [frontTex, backTex] = useTexture(
+    ['./images/frontpage.webp', './images/profilepage.webp'],
+    (textures) => {
+      for (const tex of textures) {
+        tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.needsUpdate = true;
+      }
+    },
+  );
 
   const DEFAULT_HEIGHT = 0.5;
   const aspect = useMemo(() => {
@@ -312,17 +308,15 @@ const PhotoFrame = memo(function PhotoFrame({
   shootingdate?: string;
   index?: number;
 }) {
-  const texture = useTexture(url);
-
   // VRパフォーマンス向上のためテクスチャ設定を最適化
-  useEffect(() => {
-    texture.generateMipmaps = true;
-    texture.minFilter = THREE.LinearMipmapLinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.anisotropy = 1;
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.needsUpdate = true;
-  }, [texture]);
+  const texture = useTexture(url, (tex) => {
+    tex.generateMipmaps = true;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.anisotropy = 1;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+  });
 
   const { width, height } = useMemo(() => {
     const dims = getTextureDimensions(texture);
@@ -567,14 +561,12 @@ const PhotoWall = memo(function PhotoWall({
 });
 
 const Walls = memo(function Walls() {
-  const colorMap = useTexture('./images/plastered_wall_03_diff_1k.jpg');
-
-  useEffect(() => {
-    colorMap.wrapS = colorMap.wrapT = THREE.RepeatWrapping;
-    colorMap.repeat.set(5, 2);
-    colorMap.colorSpace = THREE.SRGBColorSpace;
-    colorMap.needsUpdate = true;
-  }, [colorMap]);
+  const colorMap = useTexture('./images/plastered_wall_03_diff_1k.jpg', (tex) => {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(5, 2);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+  });
 
   return (
     <group>
@@ -681,7 +673,9 @@ function Controls() {
 function App() {
   const { works, loading: worksLoading, error: worksError, refetch } = useWorks();
   const [vrStarted, setVrStarted] = useState(false);
-  const [vrSupported, setVrSupported] = useState<boolean | null>(null);
+  const [vrSupported, setVrSupported] = useState<boolean | null>(() =>
+    navigator.xr && typeof navigator.xr.isSessionSupported === 'function' ? null : false,
+  );
   const [initialReady, setInitialReady] = useState(false);
   const startCarouselRef = useRef<(dir: 'next' | 'prev') => void>(() => {});
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -690,19 +684,18 @@ function App() {
 
   // VR対応チェック
   useEffect(() => {
-    let active = true;
     const xr = navigator.xr;
-    if (xr && typeof xr.isSessionSupported === 'function') {
-      xr.isSessionSupported('immersive-vr')
-        .then((supported) => {
-          if (active) setVrSupported(supported);
-        })
-        .catch(() => {
-          if (active) setVrSupported(false);
-        });
-    } else {
-      setVrSupported(false);
-    }
+    if (!xr || typeof xr.isSessionSupported !== 'function') return;
+
+    let active = true;
+    xr.isSessionSupported('immersive-vr')
+      .then((supported) => {
+        if (active) setVrSupported(supported);
+      })
+      .catch(() => {
+        if (active) setVrSupported(false);
+      });
+
     return () => {
       active = false;
     };
@@ -725,11 +718,7 @@ function App() {
 
   // 初期表示用の先頭画像のみ軽量プリロード（タイムアウト付きでブロックを防止）
   useEffect(() => {
-    if (worksLoading) return;
-    if (works.length === 0) {
-      setInitialReady(true);
-      return;
-    }
+    if (worksLoading || works.length === 0) return;
 
     let active = true;
     const initialUrls = works
@@ -841,7 +830,7 @@ function App() {
     [works.length],
   );
 
-  const loading = worksLoading || !initialReady;
+  const loading = worksLoading || (works.length > 0 && !initialReady);
 
   if (loading) {
     return (
