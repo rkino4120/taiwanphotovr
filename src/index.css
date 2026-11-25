@@ -3,26 +3,33 @@
 @font-face {
   font-family: 'Noto Sans JP';
   font-style: normal;
-  font-weight: 400;
-  src: url('./fonts/NotoSansJP-Regular.ttf') format('truetype');
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/NotoSansJP-Regular.ttf') format('truetype');
 }
 
-@font-face {
-  font-family: 'Noto Sans JP';
-  font-style: normal;
-  font-weight: 500;
-  src: url('./fonts/NotoSansJP-Regular.ttf') format('truetype');
+@theme {
+  --font-noto: 'Noto Sans JP', sans-serif;
 }
 
-@font-face {
-  font-family: 'Noto Sans JP';
-  font-style: normal;
-  font-weight: 700;
-  src: url('./fonts/NotoSansJP-Regular.ttf') format('truetype');
+@keyframes gallery-marquee {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
 }
 
-@layer utilities {
-  .font-noto {
-    font-family: 'Noto Sans JP', sans-serif;
+.animate-gallery-marquee {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation: gallery-marquee var(--marquee-duration, 40s) linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-gallery-marquee {
+    animation: none;
   }
 }

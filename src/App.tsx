@@ -1,116 +1,128 @@
-import { useRef, useMemo, Suspense, useState, useEffect } from 'react';
-import { Canvas, useFrame, useLoader } from '@react-three/fiber';
+import {
+  useRef,
+  useMemo,
+  Suspense,
+  useState,
+  useEffect,
+  useCallback,
+  memo,
+  type RefObject,
+  type CSSProperties,
+} from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { XR, createXRStore, useXR } from '@react-three/xr';
-import { OrbitControls, Text } from '@react-three/drei';
+import { OrbitControls, Text, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
+import { useWorks } from './hooks/useWorks';
+import type { Work } from './types/work';
 
-// --- ユーティリティ関数 ---
+// --- 定数・ユーティリティ関数 ---
+
+const FLOOR_Y = 0;
+const FONT_URL = './fonts/NotoSansJP-Regular.ttf';
+const MAX_FRAME_DELTA = 0.1;
+
+function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
 
 function htmlToText(html: string): string {
   if (!html) return '';
   const replaced = html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n');
-  const tmp = document.createElement('div');
-  tmp.innerHTML = replaced;
-  return tmp.textContent || tmp.innerText || '';
+  const doc = new DOMParser().parseFromString(replaced, 'text/html');
+  return doc.body.textContent?.trim() ?? '';
 }
 
-function formatShootingDate(dateStr?: string) {
+function formatShootingDate(dateStr?: string): string {
   if (!dateStr) return '';
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return '';
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
-// XRストアの作成
-const store = createXRStore();
+function getTextureDimensions(texture: THREE.Texture): { width: number; height: number } | null {
+  const img = texture.image as { width?: number; height?: number } | undefined;
+  if (img && typeof img.width === 'number' && typeof img.height === 'number' && img.height > 0) {
+    return { width: img.width, height: img.height };
+  }
+  return null;
+}
 
-// 定数
-const FLOOR_Y = 0;
+// XRストアの作成（本番ではエミュレータ無効、VR専用オファー、Foveated Rendering有効）
+const store = createXRStore({
+  emulate: import.meta.env.DEV ? 'metaQuest3' : false,
+  offerSession: 'immersive-vr',
+  foveation: 1,
+});
 
-// --- コンポーネント群 ---
+// --- 3D コンポーネント群 ---
 
-
-function Ground() {
-  // ファイルパスを元に戻す
-  const [colorMap, roughnessMap] = useLoader(THREE.TextureLoader, [
+const Ground = memo(function Ground() {
+  const [colorMap, roughnessMap] = useTexture([
     './images/concrete_diff.jpg',
-    './images/concrete_rough.png'
+    './images/concrete_rough.png',
   ]);
 
-  useMemo(() => {
-    [colorMap, roughnessMap].forEach(tex => {
-      if(tex) {
-        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-        tex.repeat.set(5, 5);
-        tex.needsUpdate = true;
-      }
-    });
-    // 色用テクスチャは sRGB にする（roughness 等は線形で扱う）
-    try {
-      if (colorMap) (colorMap as any).colorSpace = THREE.SRGBColorSpace;
-    } catch (e) {
-      try { if (colorMap) (colorMap as any).encoding = (THREE as any).sRGBEncoding; } catch (e2) { }
+  useEffect(() => {
+    for (const tex of [colorMap, roughnessMap]) {
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(5, 5);
     }
-    try {
-      if (roughnessMap) (roughnessMap as any).encoding = (THREE as any).LinearEncoding;
-    } catch (e) { }
+    // 色用テクスチャは sRGB、bump/roughness 用は非カラー（線形）として扱う
+    colorMap.colorSpace = THREE.SRGBColorSpace;
+    roughnessMap.colorSpace = THREE.NoColorSpace;
+    colorMap.needsUpdate = true;
+    roughnessMap.needsUpdate = true;
   }, [colorMap, roughnessMap]);
 
   return (
     <mesh position={[0, FLOOR_Y, 0]} rotation={[-Math.PI / 2, 0, 0]}>
       <planeGeometry args={[12, 12]} />
-      <meshStandardMaterial 
-        map={colorMap}
-        bumpMap={roughnessMap}
-        bumpScale={0.1}
-      />
+      <meshStandardMaterial map={colorMap} bumpMap={roughnessMap} bumpScale={0.1} />
     </mesh>
   );
-}
+});
 
-function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () => void }) {
-  // ファイルパスを元に戻す
-  const [frontTex, backTex] = useLoader(THREE.TextureLoader, ['./images/frontpage.webp', './images/profilepage.webp'], (loader) => {
-    loader.crossOrigin = 'anonymous';
-  });
+const FloatingBoard = memo(function FloatingBoard({
+  onPrev,
+  onNext,
+}: {
+  onPrev?: () => void;
+  onNext?: () => void;
+}) {
+  const [frontTex, backTex] = useTexture([
+    './images/frontpage.webp',
+    './images/profilepage.webp',
+  ]);
 
-  useMemo(() => {
-    [frontTex, backTex].forEach((t) => {
-      if (!t) return;
-      t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
-      try {
-        (t as any).colorSpace = THREE.SRGBColorSpace;
-      } catch (e) {
-        try { (t as any).encoding = (THREE as any).sRGBEncoding; } catch (e2) { /* ignore if neither exists */ }
-      }
-      t.needsUpdate = true;
-    });
+  useEffect(() => {
+    for (const tex of [frontTex, backTex]) {
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+    }
   }, [frontTex, backTex]);
 
   const DEFAULT_HEIGHT = 0.5;
   const aspect = useMemo(() => {
-    if (frontTex && frontTex.image && (frontTex.image as any).width && (frontTex.image as any).height) {
-      return (frontTex.image as any).width / (frontTex.image as any).height;
-    }
-    return 1.5;
+    const dims = getTextureDimensions(frontTex);
+    return dims ? dims.width / dims.height : 1.5;
   }, [frontTex]);
 
   const HEIGHT = DEFAULT_HEIGHT;
   const WIDTH = HEIGHT * aspect;
   const EPS = 0.001;
+  const DURATION = 0.6;
 
   const [flipped, setFlipped] = useState(false);
   const animRef = useRef({ start: 0, end: 0, t: 1 });
   const currentY = useRef(0);
-  const rootRef = useRef<THREE.Group>(null);
   const boardRef = useRef<THREE.Group>(null);
-  const DURATION = 0.6;
-
-  const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
   useFrame((_, delta) => {
     if (animRef.current.t < 1) {
-      animRef.current.t = Math.min(1, animRef.current.t + delta / DURATION);
+      const dt = Math.min(delta, MAX_FRAME_DELTA);
+      animRef.current.t = Math.min(1, animRef.current.t + dt / DURATION);
       const eased = easeInOutCubic(animRef.current.t);
       currentY.current = THREE.MathUtils.lerp(animRef.current.start, animRef.current.end, eased);
       if (boardRef.current) {
@@ -119,37 +131,49 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
     }
   });
 
-  const toggleFlip = () => {
+  const toggleFlip = useCallback(() => {
     const from = currentY.current;
     const to = flipped ? 0 : Math.PI;
     animRef.current = { start: from, end: to, t: 0 };
     setFlipped((f) => !f);
-  };
-
-  // import.meta.env.BASE_URL のエラー回避のため、相対パスを直接指定
-  const fontUrl = './fonts/NotoSansJP-Regular.ttf';
+  }, [flipped]);
 
   return (
-    <group ref={rootRef} position={[0, FLOOR_Y + 1.3, -1.3]}> 
-      <group ref={boardRef} rotation={[0, 0, 0]}> 
+    <group position={[0, FLOOR_Y + 1.3, -1.3]}>
+      <group ref={boardRef} rotation={[0, 0, 0]}>
         <mesh position={[0, 0, 0]}>
-           <boxGeometry args={[WIDTH + 0.04, HEIGHT + 0.04, 0.02]} />
-           <meshStandardMaterial color="#222" />
+          <boxGeometry args={[WIDTH + 0.04, HEIGHT + 0.04, 0.02]} />
+          <meshStandardMaterial color="#222" />
         </mesh>
 
-        <mesh position={[0, 0, EPS + 0.015]} onPointerDown={toggleFlip} receiveShadow={false} castShadow={false}>
+        <mesh
+          position={[0, 0, EPS + 0.015]}
+          onPointerDown={toggleFlip}
+          receiveShadow={false}
+          castShadow={false}
+        >
           <planeGeometry args={[WIDTH, HEIGHT]} />
           <meshBasicMaterial transparent opacity={0} side={THREE.DoubleSide} depthWrite={false} />
         </mesh>
 
         {/* 正面 */}
-        <mesh position={[0, 0, 0.011]} rotation={[0, 0, 0]} receiveShadow={false} castShadow={false}>
+        <mesh
+          position={[0, 0, 0.011]}
+          rotation={[0, 0, 0]}
+          receiveShadow={false}
+          castShadow={false}
+        >
           <planeGeometry args={[WIDTH, HEIGHT]} />
           <meshBasicMaterial map={frontTex} side={THREE.FrontSide} toneMapped={false} />
         </mesh>
 
         {/* 裏面 */}
-        <mesh position={[0, 0, -0.011]} rotation={[0, Math.PI, 0]} receiveShadow={false} castShadow={false}>
+        <mesh
+          position={[0, 0, -0.011]}
+          rotation={[0, Math.PI, 0]}
+          receiveShadow={false}
+          castShadow={false}
+        >
           <planeGeometry args={[WIDTH, HEIGHT]} />
           <meshBasicMaterial map={backTex} side={THREE.FrontSide} toneMapped={false} />
         </mesh>
@@ -157,13 +181,20 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
 
       {/* 左矢印 */}
       <group position={[-WIDTH / 2 - 0.25, 0, 0]}>
-        <mesh 
-          onPointerDown={(e) => { e.stopPropagation(); onPrev && onPrev(); }}
-          onPointerEnter={(e) => { (e.object as THREE.Mesh).scale.set(1.2, 1.2, 1.2); }}
-          onPointerLeave={(e) => { (e.object as THREE.Mesh).scale.set(1, 1, 1); }}
+        <mesh
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            onPrev?.();
+          }}
+          onPointerEnter={(e) => {
+            (e.object as THREE.Mesh).scale.set(1.2, 1.2, 1.2);
+          }}
+          onPointerLeave={(e) => {
+            (e.object as THREE.Mesh).scale.set(1, 1, 1);
+          }}
           rotation={[Math.PI / 2, 0, Math.PI / 2]}
         >
-          <coneGeometry args={[0.04, 0.18, 32]} />
+          <coneGeometry args={[0.04, 0.18, 24]} />
           <meshStandardMaterial color="#dddddd" emissive="#dddddd" emissiveIntensity={0.2} />
         </mesh>
         <Text
@@ -172,7 +203,7 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
           color="white"
           anchorX="center"
           anchorY="top"
-          font={fontUrl}
+          font={FONT_URL}
           outlineWidth={0.005}
           outlineColor="#000000"
           maxWidth={1}
@@ -184,13 +215,20 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
 
       {/* 右矢印 */}
       <group position={[WIDTH / 2 + 0.25, 0, 0]}>
-        <mesh 
-          onPointerDown={(e) => { e.stopPropagation(); onNext && onNext(); }}
-          onPointerEnter={(e) => { (e.object as THREE.Mesh).scale.set(1.2, 1.2, 1.2); }}
-          onPointerLeave={(e) => { (e.object as THREE.Mesh).scale.set(1, 1, 1); }}
+        <mesh
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            onNext?.();
+          }}
+          onPointerEnter={(e) => {
+            (e.object as THREE.Mesh).scale.set(1.2, 1.2, 1.2);
+          }}
+          onPointerLeave={(e) => {
+            (e.object as THREE.Mesh).scale.set(1, 1, 1);
+          }}
           rotation={[Math.PI / 2, 0, -Math.PI / 2]}
         >
-          <coneGeometry args={[0.04, 0.18, 32]} />
+          <coneGeometry args={[0.04, 0.18, 24]} />
           <meshStandardMaterial color="#dddddd" emissive="#dddddd" emissiveIntensity={0.2} />
         </mesh>
         <Text
@@ -199,7 +237,7 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
           color="white"
           anchorX="center"
           anchorY="top"
-          font={fontUrl}
+          font={FONT_URL}
           outlineWidth={0.005}
           outlineColor="#000000"
           maxWidth={1}
@@ -208,21 +246,39 @@ function FloatingBoard({ onPrev, onNext }: { onPrev?: () => void, onNext?: () =>
           次へ
         </Text>
       </group>
-
     </group>
   );
-}
+});
 
 // BGM を制御する 3D UI（FloatingBoard の下に配置）
-function Bgm3DControls({ position = [0, FLOOR_Y + 1.0, -1.3], bgmEnabled, toggleBgm }: { position?: [number, number, number], bgmEnabled: boolean, toggleBgm: () => void }) {
+const Bgm3DControls = memo(function Bgm3DControls({
+  position = [0, FLOOR_Y + 1.0, -1.3],
+  bgmEnabled,
+  toggleBgm,
+}: {
+  position?: [number, number, number];
+  bgmEnabled: boolean;
+  toggleBgm: () => void;
+}) {
   const [hover, setHover] = useState(false);
-  const sizeX = 0.2;
-  const sizeY = 0.08;
+
   return (
     <group position={position}>
-      <mesh position={[0, -0.09, 0]} onPointerDown={(e) => { e.stopPropagation(); toggleBgm(); }} onPointerOver={() => setHover(true)} onPointerOut={() => setHover(false)}>
-        <boxGeometry args={[sizeX, sizeY, 0.02]} />
-        <meshStandardMaterial color={hover ? 0x88ccff : 0x666666} metalness={0.2} roughness={0.4} />
+      <mesh
+        position={[0, -0.09, 0]}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          toggleBgm();
+        }}
+        onPointerOver={() => setHover(true)}
+        onPointerOut={() => setHover(false)}
+      >
+        <boxGeometry args={[0.2, 0.08, 0.02]} />
+        <meshStandardMaterial
+          color={hover ? 0x88ccff : 0x666666}
+          metalness={0.2}
+          roughness={0.4}
+        />
       </mesh>
       <Text
         position={[0, -0.08, 0.03]}
@@ -231,54 +287,68 @@ function Bgm3DControls({ position = [0, FLOOR_Y + 1.0, -1.3], bgmEnabled, toggle
         color="white"
         anchorX="center"
         anchorY="middle"
-        font={`./fonts/NotoSansJP-Regular.ttf`}
+        font={FONT_URL}
       >
         {bgmEnabled ? 'Pause BGM' : 'Play BGM'}
       </Text>
     </group>
   );
-}
+});
 
-function PhotoFrame({ url, position = [-0.89, FLOOR_Y + 1.5, 0], rotation = [0, Math.PI / 2, 0], title, body, shootingdate, index }: { url: string, position?: [number, number, number], rotation?: [number, number, number], title?: string, body?: string, shootingdate?: string, index?: number }) {
-  const texture = useLoader(THREE.TextureLoader, url, (loader) => {
-    loader.crossOrigin = 'anonymous';
-  });
-  
+const PhotoFrame = memo(function PhotoFrame({
+  url,
+  position = [-0.89, FLOOR_Y + 1.5, 0],
+  rotation = [0, Math.PI / 2, 0],
+  title,
+  body,
+  shootingdate,
+  index,
+}: {
+  url: string;
+  position?: [number, number, number];
+  rotation?: [number, number, number];
+  title?: string;
+  body?: string;
+  shootingdate?: string;
+  index?: number;
+}) {
+  const texture = useTexture(url);
+
   // VRパフォーマンス向上のためテクスチャ設定を最適化
-  useMemo(() => {
-    if (texture) {
-      texture.generateMipmaps = true;
-      texture.minFilter = THREE.LinearMipmapLinearFilter;
-      texture.magFilter = THREE.LinearFilter;
-      texture.anisotropy = 1; // 異方性フィルタリングを最小に
-      // 写真テクスチャは sRGB カラーとして扱う
-      try {
-        (texture as any).colorSpace = THREE.SRGBColorSpace;
-      } catch (e) {
-        try { (texture as any).encoding = (THREE as any).sRGBEncoding; } catch (e2) { }
-      }
-    }
+  useEffect(() => {
+    texture.generateMipmaps = true;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.anisotropy = 1;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
   }, [texture]);
-  
-  const { width, height } = useMemo(() => {
-    if (texture.image?.width && texture.image?.height) {
-      const aspect = texture.image.width / texture.image.height;
-      const h = 0.75; 
-      return { width: h * aspect, height: h };
-    }
-    return { width: 0.75, height: 0.75 };
-  }, [texture]);
-  
-  const GLOBAL_Y_SHIFT = 0.3;
-  const localPos: [number, number, number] = [position[0], position[1] + GLOBAL_Y_SHIFT, position[2]];
 
+  const { width, height } = useMemo(() => {
+    const dims = getTextureDimensions(texture);
+    const h = 0.75;
+    if (dims) {
+      return { width: h * (dims.width / dims.height), height: h };
+    }
+    return { width: h, height: h };
+  }, [texture]);
+
+  const bodyText = useMemo(() => (body ? htmlToText(body) : ''), [body]);
+  const formattedDate = useMemo(
+    () => (shootingdate ? formatShootingDate(shootingdate) : ''),
+    [shootingdate],
+  );
+
+  const GLOBAL_Y_SHIFT = 0.3;
+  const localPos: [number, number, number] = [
+    position[0],
+    position[1] + GLOBAL_Y_SHIFT,
+    position[2],
+  ];
   const indexLabel = typeof index === 'number' ? String(index).padStart(2, '0') : null;
-  // import.meta.env.BASE_URL エラー回避のため相対パスを使用
-  const fontUrl = './fonts/NotoSansJP-Regular.ttf';
 
   return (
     <group position={localPos} rotation={rotation}>
-      
       <mesh position={[0, 0, -0.015]}>
         <boxGeometry args={[width + 0.06, height + 0.06, 0.03]} />
         <meshStandardMaterial color="#1a1a1a" roughness={0.2} />
@@ -290,7 +360,7 @@ function PhotoFrame({ url, position = [-0.89, FLOOR_Y + 1.5, 0], rotation = [0, 
 
       <mesh position={[0, 0, 0.01]}>
         <planeGeometry args={[width, height]} />
-        <meshBasicMaterial map={texture} />
+        <meshBasicMaterial map={texture} toneMapped={false} />
       </mesh>
 
       {indexLabel && (
@@ -301,7 +371,7 @@ function PhotoFrame({ url, position = [-0.89, FLOOR_Y + 1.5, 0], rotation = [0, 
           anchorX="center"
           anchorY="bottom"
           maxWidth={width}
-          font={fontUrl}
+          font={FONT_URL}
           outlineWidth={0.002}
           outlineColor="#000000"
         >
@@ -317,14 +387,14 @@ function PhotoFrame({ url, position = [-0.89, FLOOR_Y + 1.5, 0], rotation = [0, 
           anchorX="center"
           anchorY="top"
           maxWidth={width * 1.2}
-          font={fontUrl}
+          font={FONT_URL}
           outlineWidth={0.003}
           outlineColor="#000000"
         >
           {title}
         </Text>
       )}
-      {body && (
+      {bodyText && (
         <Text
           position={[0, -height / 2 - 0.18, 0]}
           fontSize={0.018}
@@ -334,14 +404,14 @@ function PhotoFrame({ url, position = [-0.89, FLOOR_Y + 1.5, 0], rotation = [0, 
           anchorY="top"
           textAlign="center"
           maxWidth={width * 1.2}
-          font={fontUrl}
+          font={FONT_URL}
           outlineWidth={0.001}
           outlineColor="#000000"
         >
-          {htmlToText(body)}
+          {bodyText}
         </Text>
       )}
-      {shootingdate && (
+      {formattedDate && (
         <Text
           position={[0, -height / 2 - 0.35, 0]}
           fontSize={0.015}
@@ -350,205 +420,213 @@ function PhotoFrame({ url, position = [-0.89, FLOOR_Y + 1.5, 0], rotation = [0, 
           anchorY="top"
           textAlign="center"
           maxWidth={width}
-          font={fontUrl}
+          font={FONT_URL}
           outlineWidth={0.001}
           outlineColor="#000000"
         >
-          {`撮影日: ${formatShootingDate(shootingdate)}`}
+          {`撮影日: ${formattedDate}`}
         </Text>
       )}
     </group>
   );
-}
+});
 
-function PhotoWall({ works, startCarouselRef }: { works: any[], startCarouselRef?: React.MutableRefObject<(dir: 'next' | 'prev') => void> }) {
+const PhotoWall = memo(function PhotoWall({
+  works,
+  startCarouselRef,
+}: {
+  works: Work[];
+  startCarouselRef?: RefObject<(dir: 'next' | 'prev') => void>;
+}) {
   const [startIndex, setStartIndex] = useState(0);
-  
-  const verticalOffsetRef = useRef(0);
+
+  const wallGroupRef = useRef<THREE.Group>(null);
   const phaseRef = useRef<'idle' | 'moveBack' | 'moveForward'>('idle');
   const progressRef = useRef(0);
-  const [, setTick] = useState(0);
   const directionRef = useRef<'next' | 'prev'>('next');
 
-  const DURATION = 0.6; 
-  const DIST = 2.0; 
+  const DURATION = 0.6;
+  const DIST = 2.0;
 
-  const easeInOutCubic = (t: number) => {
-    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-  };
-
-  const startCarousel = (direction: 'next' | 'prev') => {
+  const startCarousel = useCallback((direction: 'next' | 'prev') => {
     if (phaseRef.current !== 'idle') return;
     directionRef.current = direction;
     phaseRef.current = 'moveBack';
     progressRef.current = 0;
-  };
+  }, []);
 
   useEffect(() => {
-    if (startCarouselRef) startCarouselRef.current = startCarousel;
-  }, [startCarouselRef]);
+    if (startCarouselRef) {
+      startCarouselRef.current = startCarousel;
+    }
+  }, [startCarouselRef, startCarousel]);
 
+  // 次のページ・前のページのテクスチャを先読みして切替時のチラつきを防止
+  useEffect(() => {
+    if (works.length === 0) return;
+    const len = works.length;
+    const preloadOffsets = [-3, -2, -1, 3, 4, 5];
+    const urls = new Set<string>();
+    for (const offset of preloadOffsets) {
+      const idx = (((startIndex + offset) % len) + len) % len;
+      const url = works[idx]?.photo?.url;
+      if (url) urls.add(url);
+    }
+    for (const url of urls) {
+      useTexture.preload(url);
+    }
+  }, [works, startIndex]);
+
+  // useFrame 内では React state を更新せず Three.js オブジェクトの position を直接操作
   useFrame((_, delta) => {
-    if (phaseRef.current === 'idle') return;
-    progressRef.current += delta;
+    if (phaseRef.current === 'idle' || !wallGroupRef.current) return;
+    const dt = Math.min(delta, MAX_FRAME_DELTA);
+    progressRef.current += dt;
     const p = Math.min(progressRef.current / DURATION, 1);
 
     if (phaseRef.current === 'moveBack') {
       const eased = easeInOutCubic(p);
-      verticalOffsetRef.current = THREE.MathUtils.lerp(0, -DIST, eased);
-      setTick(t => t + 1);
-      
+      wallGroupRef.current.position.y = THREE.MathUtils.lerp(0, -DIST, eased);
+
       if (p >= 1) {
-        setStartIndex(s => {
+        setStartIndex((s) => {
           const len = Math.max(works.length, 1);
           if (directionRef.current === 'next') {
             return (s + 3) % len;
-          } else {
-            return (s - 3 + len) % len; 
           }
+          return (((s - 3) % len) + len) % len;
         });
-        
-        verticalOffsetRef.current = -DIST;
+
+        wallGroupRef.current.position.y = -DIST;
         progressRef.current = 0;
         phaseRef.current = 'moveForward';
       }
     } else if (phaseRef.current === 'moveForward') {
       const eased = easeInOutCubic(p);
-      verticalOffsetRef.current = THREE.MathUtils.lerp(-DIST, 0, eased);
-      setTick(t => t + 1);
-      
+      wallGroupRef.current.position.y = THREE.MathUtils.lerp(-DIST, 0, eased);
+
       if (p >= 1) {
-        verticalOffsetRef.current = 0;
+        wallGroupRef.current.position.y = 0;
         progressRef.current = 0;
         phaseRef.current = 'idle';
       }
     }
   });
 
+  if (works.length === 0) return null;
+
   const getWork = (offset: number) => {
-     if (!works || works.length === 0) return null;
-     const idx = (startIndex + offset) % works.length;
-     return works[idx < 0 ? idx + works.length : idx];
+    const idx = (((startIndex + offset) % works.length) + works.length) % works.length;
+    return works[idx];
   };
 
   const w1 = getWork(0);
   const w2 = getWork(1);
   const w3 = getWork(2);
 
-  if (!works.length) return null;
-
   return (
-    <>
+    <group ref={wallGroupRef}>
       {w3?.photo?.url && (
-        <PhotoFrame 
-          key={`w3-${startIndex}`}
-          url={w3.photo.url} 
-          position={[-0.89, FLOOR_Y + 1.3 + verticalOffsetRef.current, 0.7]} 
-          rotation={[0, Math.PI / 2, 0]} 
-          title={w3.title} 
-          body={w3.body} 
-          shootingdate={w3.shootingdate} 
+        <PhotoFrame
+          key={`w3-${w3.id}`}
+          url={w3.photo.url}
+          position={[-0.89, FLOOR_Y + 1.3, 0.7]}
+          rotation={[0, Math.PI / 2, 0]}
+          title={w3.title}
+          body={w3.body}
+          shootingdate={w3.shootingdate}
           index={((startIndex + 2) % works.length) + 1}
         />
       )}
       {w1?.photo?.url && (
-        <PhotoFrame 
-          key={`w1-${startIndex}`}
-          url={w1.photo.url} 
-          position={[-0.89, FLOOR_Y + 1.3 + verticalOffsetRef.current, -0.7]} 
-          rotation={[0, Math.PI / 2, 0]} 
-          title={w1.title} 
-          body={w1.body} 
-          shootingdate={w1.shootingdate} 
-          index={((startIndex + 0) % works.length) + 1}
+        <PhotoFrame
+          key={`w1-${w1.id}`}
+          url={w1.photo.url}
+          position={[-0.89, FLOOR_Y + 1.3, -0.7]}
+          rotation={[0, Math.PI / 2, 0]}
+          title={w1.title}
+          body={w1.body}
+          shootingdate={w1.shootingdate}
+          index={(startIndex % works.length) + 1}
         />
       )}
       {w2?.photo?.url && (
-        <PhotoFrame 
-          key={`w2-${startIndex}`}
-          url={w2.photo.url} 
-          position={[0.89, FLOOR_Y + 1.3 + verticalOffsetRef.current, 0]} 
-          rotation={[0, -Math.PI / 2, 0]} 
-          title={w2.title} 
-          body={w2.body} 
-          shootingdate={w2.shootingdate} 
+        <PhotoFrame
+          key={`w2-${w2.id}`}
+          url={w2.photo.url}
+          position={[0.89, FLOOR_Y + 1.3, 0]}
+          rotation={[0, -Math.PI / 2, 0]}
+          title={w2.title}
+          body={w2.body}
+          shootingdate={w2.shootingdate}
           index={((startIndex + 1) % works.length) + 1}
         />
       )}
-    </>
+    </group>
   );
-}
+});
 
-function Walls() {
-  const colorMap = useLoader(THREE.TextureLoader, './images/plastered_wall_03_diff_1k.jpg');
+const Walls = memo(function Walls() {
+  const colorMap = useTexture('./images/plastered_wall_03_diff_1k.jpg');
 
-  useMemo(() => {
-    if (colorMap) {
-      colorMap.wrapS = colorMap.wrapT = THREE.RepeatWrapping;
-      colorMap.repeat.set(5, 2);
-      colorMap.needsUpdate = true;
-      // 壁のカラーは sRGB にする
-      try {
-        (colorMap as any).colorSpace = THREE.SRGBColorSpace;
-      } catch (e) {
-        try { (colorMap as any).encoding = (THREE as any).sRGBEncoding; } catch (e2) { }
-      }
-    }
+  useEffect(() => {
+    colorMap.wrapS = colorMap.wrapT = THREE.RepeatWrapping;
+    colorMap.repeat.set(5, 2);
+    colorMap.colorSpace = THREE.SRGBColorSpace;
+    colorMap.needsUpdate = true;
   }, [colorMap]);
-
-  const wallMaterialProps = {
-    map: colorMap,
-    roughness: 0.8,
-  } as any;
 
   return (
     <group>
-       {/* 左 */}
-       <mesh position={[-1, FLOOR_Y + 2, 0]}>
-         <boxGeometry args={[0.2, 4, 10]} />
-         <meshStandardMaterial {...wallMaterialProps} />
-       </mesh>
-       {/* 右 */}
-       <mesh position={[1, FLOOR_Y + 2, 0]}>
-         <boxGeometry args={[0.2, 4, 10]} />
-         <meshStandardMaterial {...wallMaterialProps} />
-       </mesh>
-       {/* 前後壁（黒） */}
-       <mesh position={[0, FLOOR_Y + 2, -5]}>
-         <boxGeometry args={[10, 4, 0.2]} />
-         <meshStandardMaterial color="#000000" />
-       </mesh>
-       <mesh position={[0, FLOOR_Y + 2, 5]}>
-         <boxGeometry args={[10, 4, 0.2]} />
-         <meshStandardMaterial color="#000000" />
-       </mesh>
-       {/* 左端黒 */}
-       <mesh position={[-5, FLOOR_Y + 2, 0]}>
-         <boxGeometry args={[0.2, 4, 10]} />
-         <meshStandardMaterial color="#000000" />
-       </mesh>
-       {/* 右端黒 */}
-       <mesh position={[5, FLOOR_Y + 2, 0]}>
-         <boxGeometry args={[0.2, 4, 10]} />
-         <meshStandardMaterial color="#000000" />
-       </mesh>
-       {/* 天井 */}
-       <mesh position={[0, FLOOR_Y + 4, 0]} rotation={[Math.PI / 2, 0, 0]}>
-         <planeGeometry args={[10, 10]} />
-         <meshStandardMaterial color="#000000" />
-       </mesh>
+      {/* 左 */}
+      <mesh position={[-1, FLOOR_Y + 2, 0]}>
+        <boxGeometry args={[0.2, 4, 10]} />
+        <meshStandardMaterial map={colorMap} roughness={0.8} />
+      </mesh>
+      {/* 右 */}
+      <mesh position={[1, FLOOR_Y + 2, 0]}>
+        <boxGeometry args={[0.2, 4, 10]} />
+        <meshStandardMaterial map={colorMap} roughness={0.8} />
+      </mesh>
+      {/* 前後壁（黒） */}
+      <mesh position={[0, FLOOR_Y + 2, -5]}>
+        <boxGeometry args={[10, 4, 0.2]} />
+        <meshStandardMaterial color="#000000" />
+      </mesh>
+      <mesh position={[0, FLOOR_Y + 2, 5]}>
+        <boxGeometry args={[10, 4, 0.2]} />
+        <meshStandardMaterial color="#000000" />
+      </mesh>
+      {/* 左端黒 */}
+      <mesh position={[-5, FLOOR_Y + 2, 0]}>
+        <boxGeometry args={[0.2, 4, 10]} />
+        <meshStandardMaterial color="#000000" />
+      </mesh>
+      {/* 右端黒 */}
+      <mesh position={[5, FLOOR_Y + 2, 0]}>
+        <boxGeometry args={[0.2, 4, 10]} />
+        <meshStandardMaterial color="#000000" />
+      </mesh>
+      {/* 天井 */}
+      <mesh position={[0, FLOOR_Y + 4, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[10, 10]} />
+        <meshStandardMaterial color="#000000" />
+      </mesh>
     </group>
   );
-}
+});
 
-function SingleSpot({ position }: { position: [number, number, number] }) {
+const SingleSpot = memo(function SingleSpot({
+  position,
+}: {
+  position: [number, number, number];
+}) {
   const lightRef = useRef<THREE.SpotLight>(null);
-  const targetRef = useRef<THREE.Mesh>(null);
+  const targetRef = useRef<THREE.Object3D>(null);
 
   useEffect(() => {
     if (lightRef.current && targetRef.current) {
       lightRef.current.target = targetRef.current;
-      lightRef.current.shadow.bias = -0.0001; 
     }
   }, []);
 
@@ -557,164 +635,137 @@ function SingleSpot({ position }: { position: [number, number, number] }) {
       <spotLight
         ref={lightRef}
         position={position}
-        angle={Math.PI / 4} 
+        angle={Math.PI / 4}
         distance={8}
-        intensity={4.5} 
+        intensity={4.5}
         penumbra={0.5}
       />
-      <mesh ref={targetRef} position={[position[0], FLOOR_Y, position[2]]} visible={false} />
+      <object3D ref={targetRef} position={[position[0], FLOOR_Y, position[2]]} />
     </>
   );
-}
+});
 
-function SpotLightsRow() {
-  const positions = useMemo(() => {
-    const arr: Array<[number, number, number]> = [];
-    // VRパフォーマンス向上のためライト数を削減
-    for (let z = -3; z <= 3; z += 3) {
-      arr.push([0, 2, z]);
-    }
-    return arr;
-  }, []);
+const SPOT_POSITIONS: ReadonlyArray<[number, number, number]> = [
+  [0, 2, -3],
+  [0, 2, 0],
+  [0, 2, 3],
+];
 
+const SpotLightsRow = memo(function SpotLightsRow() {
   return (
     <>
-      {positions.map((pos, i) => (
+      {SPOT_POSITIONS.map((pos, i) => (
         <SingleSpot key={i} position={pos} />
       ))}
     </>
   );
-}
+});
 
 function Controls() {
   // VRセッション中はOrbitControlsを無効化する
   const session = useXR((state) => state.session);
   return (
-    <OrbitControls 
+    <OrbitControls
       enabled={!session}
-      enableDamping 
+      enableDamping
       dampingFactor={0.05}
       minDistance={0.5}
       maxDistance={20}
-      maxPolarAngle={Math.PI / 2} 
+      maxPolarAngle={Math.PI / 2}
     />
   );
 }
 
-// メイン App
+// --- メイン App ---
+
 function App() {
+  const { works, loading: worksLoading, error: worksError, refetch } = useWorks();
   const [vrStarted, setVrStarted] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [works, setWorks] = useState<any[]>([]);
   const [vrSupported, setVrSupported] = useState<boolean | null>(null);
+  const [initialReady, setInitialReady] = useState(false);
   const startCarouselRef = useRef<(dir: 'next' | 'prev') => void>(() => {});
   const audioRef = useRef<HTMLAudioElement | null>(null);
   // 初期は再生していない（ページ表示時はミュートにするため）
   const [bgmEnabled, setBgmEnabled] = useState(false);
-  const [scrollOffset, setScrollOffset] = useState(0);
-  const scrollIntervalRef = useRef<number | null>(null);
 
-  const preloadImages = async (urls: string[]): Promise<void> => {
-    await Promise.all(urls.map(url => {
-      return new Promise<void>((resolve) => {
-        const img = new window.Image();
-        img.onload = () => resolve();
-        img.onerror = () => resolve();
-        img.src = url;
-      });
-    }));
-  };
-
+  // VR対応チェック
   useEffect(() => {
-    // VR対応チェック
-    if ('xr' in navigator) {
-      (navigator as any).xr?.isSessionSupported('immersive-vr').then((supported: boolean) => {
-        setVrSupported(supported);
-      }).catch(() => {
-        setVrSupported(false);
-      });
+    let active = true;
+    const xr = navigator.xr;
+    if (xr && typeof xr.isSessionSupported === 'function') {
+      xr.isSessionSupported('immersive-vr')
+        .then((supported) => {
+          if (active) setVrSupported(supported);
+        })
+        .catch(() => {
+          if (active) setVrSupported(false);
+        });
     } else {
       setVrSupported(false);
     }
+    return () => {
+      active = false;
+    };
   }, []);
 
+  // XRセッションの開始・終了（ヘッドセット側終了含む）を確実に同期
   useEffect(() => {
-    (async () => {
-      try {
-        const MICROCMS_URL = 'https://liangworks.microcms.io/api/v1/taiwanphoto';
-        const API_KEY = import.meta.env.VITE_MICROCMS_API_KEY || import.meta.env.MICROCMS_API_KEY;
-        
-        const headers: Record<string, string> = {};
-        if (API_KEY) headers['X-MICROCMS-API-KEY'] = API_KEY;
-        
-        const allContents: any[] = [];
-        const limit = 100;
-        let offset = 0;
-        let totalCount = Infinity;
-        
-        while (allContents.length < totalCount) {
-          const url = `${MICROCMS_URL}?limit=${limit}&offset=${offset}`;
-          const res = await fetch(url, { headers });
-          if (!res.ok) throw new Error(`MicroCMS API error (${res.status})`);
-          const data = await res.json();
-          const contents: any[] = data.contents || [];
-          if (typeof data.totalCount === 'number') totalCount = data.totalCount;
-          allContents.push(...contents);
-          offset += contents.length;
-          if (contents.length === 0) break;
-        }
-        
-        setWorks(allContents);
-        const urls = allContents.map(w => w.photo?.url).filter(Boolean);
-        await preloadImages(urls);
-        setLoading(false);
-      } catch (err: any) {
-        console.error("Fetch error:", err);
-        setLoading(false);
-      }
-    })();
+    const unsubscribeState = store.subscribe((state) => {
+      setVrStarted(Boolean(state.session));
+    });
+    const unsubscribeEnd = store.onSessionEnd(() => {
+      setVrStarted(false);
+      setBgmEnabled(false);
+    });
+    return () => {
+      unsubscribeState();
+      unsubscribeEnd();
+    };
   }, []);
 
-
-
-  // 自動横スクロール（VR 起動時は停止）
+  // 初期表示用の先頭画像のみ軽量プリロード（タイムアウト付きでブロックを防止）
   useEffect(() => {
-    if (vrStarted) return;
-    if (!works || works.length === 0) return;
-
-    if (scrollIntervalRef.current) {
-      clearInterval(scrollIntervalRef.current);
-      scrollIntervalRef.current = null;
+    if (worksLoading) return;
+    if (works.length === 0) {
+      setInitialReady(true);
+      return;
     }
 
-    scrollIntervalRef.current = window.setInterval(() => {
-      setScrollOffset(prev => prev + 0.5); // ゆっくり横にスクロール
-    }, 30);
+    let active = true;
+    const initialUrls = works
+      .slice(0, 3)
+      .map((w) => w.photo?.url)
+      .filter((url): url is string => Boolean(url));
+
+    for (const url of initialUrls) {
+      useTexture.preload(url);
+    }
+
+    const preloadPromise = Promise.all(
+      initialUrls.map(
+        (url) =>
+          new Promise<void>((resolve) => {
+            const img = new window.Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+            img.src = url;
+          }),
+      ),
+    );
+
+    const timeoutPromise = new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 4000);
+    });
+
+    void Promise.race([preloadPromise, timeoutPromise]).then(() => {
+      if (active) setInitialReady(true);
+    });
 
     return () => {
-      if (scrollIntervalRef.current) {
-        clearInterval(scrollIntervalRef.current);
-        scrollIntervalRef.current = null;
-      }
+      active = false;
     };
-  }, [works, vrStarted]);
-
-  const handleVRClick = async () => {
-    if (!vrStarted) {
-      try {
-        await store.enterVR();
-        setVrStarted(true);
-        // VR への入室はユーザー操作とみなされるため、ミュートを解除してから bgmEnabled を true にする
-        if (audioRef.current) {
-          audioRef.current.muted = false;
-          setBgmEnabled(true); // これで useEffect が発火して play() される
-        }
-      } catch (error) {
-        console.error('VR Error:', error);
-        setVrStarted(false);
-      }
-    }
-  };
+  }, [works, worksLoading]);
 
   // ページ表示時はオーディオをミュートかつループ・ボリューム設定する
   useEffect(() => {
@@ -729,34 +780,74 @@ function App() {
     const audio = audioRef.current;
     if (!audio) return;
     if (bgmEnabled) {
+      audio.muted = false;
       const p = audio.play();
-      if (p && typeof p.catch === 'function') p.catch(() => setBgmEnabled(false));
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => setBgmEnabled(false));
+      }
     } else {
       audio.pause();
     }
   }, [bgmEnabled]);
 
-  const toggleBgm = async () => {
-    if (!audioRef.current) return;
+  const handleVRClick = useCallback(async () => {
+    if (vrStarted) return;
+    try {
+      const session = await store.enterVR();
+      if (session) {
+        setVrStarted(true);
+        // VR への入室はユーザー操作とみなされるため、ミュートを解除してから BGM を再生
+        if (audioRef.current) {
+          audioRef.current.muted = false;
+          setBgmEnabled(true);
+        }
+      }
+    } catch (error) {
+      console.error('VR Error:', error);
+      setVrStarted(false);
+    }
+  }, [vrStarted]);
+
+  const toggleBgm = useCallback(async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
     if (bgmEnabled) {
-      audioRef.current.pause();
+      audio.pause();
       setBgmEnabled(false);
     } else {
       try {
-        await audioRef.current.play();
+        audio.muted = false;
+        await audio.play();
         setBgmEnabled(true);
-      } catch (e) {
+      } catch {
         setBgmEnabled(false);
       }
     }
-  };
+  }, [bgmEnabled]);
+
+  const handlePrev = useCallback(() => {
+    startCarouselRef.current('prev');
+  }, []);
+
+  const handleNext = useCallback(() => {
+    startCarouselRef.current('next');
+  }, []);
+
+  const marqueeStyle = useMemo(
+    () =>
+      ({
+        '--marquee-duration': `${Math.max(works.length * 4, 20)}s`,
+      }) as CSSProperties,
+    [works.length],
+  );
+
+  const loading = worksLoading || !initialReady;
 
   if (loading) {
     return (
-      <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: '#222', color: '#fff', fontSize: '2rem' }}>
-        <div style={{ marginBottom: '1rem' }}>Loading...</div>
-        <div style={{ width: 60, height: 60, border: '6px solid #888', borderTop: '6px solid #fff', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-        <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+      <div className="w-screen h-screen flex flex-col justify-center items-center bg-[#222] text-white text-3xl">
+        <div className="mb-4">Loading...</div>
+        <div className="w-15 h-15 border-6 border-[#888] border-t-white rounded-full animate-spin" />
       </div>
     );
   }
@@ -768,52 +859,70 @@ function App() {
 
       {/* 非VR時のPC向けプレビューオーバーレイ */}
       {!vrStarted && (
-        <div className="fixed inset-0 bg-black text-white z-999 overflow-auto p-8">
+        <div className="fixed inset-0 bg-black text-white z-50 overflow-auto p-8">
           <div className="max-w-4xl mx-auto">
             <div className="mb-8 flex justify-center">
-              <img src="./images/frontpage.webp" alt="VR台湾写真展「時勢使然」" className="max-w-3xl w-full h-auto" />
+              <img
+                src="./images/frontpage.webp"
+                alt="VR台湾写真展「時勢使然」"
+                className="max-w-3xl w-full h-auto"
+                decoding="async"
+              />
             </div>
             <div className="flex justify-center mb-20">
               {vrSupported ? (
-                <button onClick={handleVRClick} className="px-8 py-6 text-2xl font-bold rounded-lg border-none bg-white text-gray-900 hover:text-white hover:bg-gray-900 cursor-pointer font-noto">VRで鑑賞する</button>
+                <button
+                  type="button"
+                  onClick={handleVRClick}
+                  className="px-8 py-6 text-2xl font-bold rounded-lg border-none bg-white text-gray-900 hover:text-white hover:bg-gray-900 cursor-pointer font-noto transition-colors"
+                >
+                  VRで鑑賞する
+                </button>
               ) : (
                 <p className="text-xl text-gray-400 font-noto">VRゴーグルをご用意ください。</p>
               )}
             </div>
 
-            <p className="mb-4">展示写真</p>
-            {/* 写真スライダー（横スクロールアニメーション） */}
+            <p className="mb-4 font-noto">展示写真</p>
+            {/* 写真スライダー（CSS GPU アクセラレーション無限横スクロール） */}
             <div className="relative w-full h-80 bg-black rounded-lg overflow-hidden">
-              {works && works.length ? (
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: '1rem',
-                    transform: `translateX(-${scrollOffset}px)`,
-                    transition: 'none',
-                  }}
-                >
-                  {/* 画像を2周分表示して無限スクロール効果 */}
+              {worksError ? (
+                <div className="text-red-400 p-5 text-center font-noto flex flex-col items-center gap-3">
+                  <p>展示写真の読み込みに失敗しました。</p>
+                  <button
+                    type="button"
+                    onClick={() => void refetch(false)}
+                    className="px-4 py-2 text-sm rounded bg-white text-gray-900 hover:bg-gray-200 cursor-pointer"
+                  >
+                    再読み込み
+                  </button>
+                </div>
+              ) : works.length > 0 ? (
+                <div className="animate-gallery-marquee gap-4" style={marqueeStyle}>
+                  {/* 画像を2周分表示して途切れのない無限スクロール */}
                   {[...works, ...works].map((work, idx) => (
                     <div
                       key={`${work.id}-${idx}`}
-                      style={{
-                        minWidth: '280px',
-                        height: '320px',
-                        backgroundImage: `url(${work.photo?.url})`,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center',
-                        borderRadius: '8px',
-                      }}
-                    />
+                      className="w-[280px] h-[320px] shrink-0 rounded-lg overflow-hidden bg-neutral-900"
+                    >
+                      {work.photo?.url && (
+                        <img
+                          src={work.photo.url}
+                          alt={work.title || '展示写真'}
+                          loading="lazy"
+                          decoding="async"
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
                   ))}
                 </div>
               ) : (
-                <div className="text-gray-400 p-5 text-center">読み込み中、または表示するコンテンツがありません。</div>
+                <div className="text-gray-400 p-5 text-center font-noto">
+                  表示するコンテンツがありません。
+                </div>
               )}
             </div>
-
-            {/* VRボタンは上に移動しました */}
           </div>
         </div>
       )}
@@ -821,27 +930,29 @@ function App() {
       <Canvas
         camera={{ position: [0, 1.6, 3], fov: 75 }}
         style={{ width: '100vw', height: '100vh' }}
-        gl={{ 
+        gl={{
           antialias: false,
           powerPreference: 'high-performance',
           alpha: false,
           stencil: false,
-          depth: true
+          depth: true,
         }}
         dpr={[1, 1.5]}
       >
         <XR store={store}>
           <Controls />
-          
+
           <ambientLight intensity={0.3} />
           <directionalLight position={[5, 10, 7.5]} intensity={0.5} />
-          
+
           <SpotLightsRow />
-          <Ground />
-          <Walls />
-          <FloatingBoard onPrev={() => startCarouselRef.current('prev')} onNext={() => startCarouselRef.current('next')} />
+          <Suspense fallback={null}>
+            <Ground />
+            <Walls />
+            <FloatingBoard onPrev={handlePrev} onNext={handleNext} />
+          </Suspense>
           <Bgm3DControls bgmEnabled={bgmEnabled} toggleBgm={toggleBgm} />
-          
+
           <Suspense fallback={null}>
             <PhotoWall works={works} startCarouselRef={startCarouselRef} />
           </Suspense>
